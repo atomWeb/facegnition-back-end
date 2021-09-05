@@ -1,0 +1,294 @@
+service: aws-facegnition-app
+useDotenv: true
+
+custom:
+  app_acronym: facegnition
+  app_domain: facegnition.ddns.net
+  default_stage: dev
+  stage: ${opt:stage, self:custom.default_stage}
+  stack_name: ${self:custom.app_acronym}-${self:custom.stage}
+  region: ${opt:region, self:provider.region}
+  deletion_policy: Delete
+  s3_img_bucket: user-images-${self:custom.stack_name}
+  s3_web_bucket: ${self:custom.app_domain}
+  http_prot: https://
+  dynamo_users_table: users-${self:custom.stack_name}
+  dynamo_validations_table: validations-${self:custom.stack_name}  
+
+provider:
+  name: aws
+  runtime: python3.8
+  lambdaHashingVersion: 20201221
+  region: us-east-1
+  httpApi:
+    authorizers:
+      serviceAuthorizer:
+        identitySource: $request.header.Authorization
+        issuerUrl:
+          Fn::Join:
+            - ""
+            - - "https://cognito-idp."
+              - "${self:custom.region}"
+              - ".amazonaws.com/"
+              - Ref: ServiceUserPool
+        audience:
+          - Ref: ServiceUserPoolClient
+  environment:
+    REGION: ${self:custom.region}
+    DOMAIN_SUFFIX: facegnition-ddns-net
+    IMAGE_BUCKET: ${self:custom.s3_img_bucket}
+    WEBSITE_BUCKET: ${self:custom.s3_web_bucket}
+    USERS_TABLE: ${self:custom.dynamo_users_table}
+    VALIDATIONS_TABLE: ${self:custom.dynamo_validations_table}
+    REKOGN_COLLECTION: ${self:custom.stack_name}-rekognillection
+    TIME_ZONE: 'Europe/Madrid'
+    TOPIC_ARN: !Ref 'NotifySNSTopic'
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.USERS_TABLE}"
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: "arn:aws:dynamodb:${opt:region, self:provider.region}:*:table/${self:provider.environment.VALIDATIONS_TABLE}"
+        - Effect: Allow
+          Action:
+            - s3:*
+          Resource: "*"
+        - Effect: "Allow"
+          Action:
+            - "rekognition:*"
+          Resource: "*"
+        # Allow Lambda to write logs to CloudWatch
+        - Effect: Allow
+          Action:
+          - logs:CreateLogGroup
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource: arn:aws:logs:*:*:*
+        # Allow Lambda to read from the DynamoDB stream
+        - Effect: Allow
+          Action:
+          - dynamodb:DescribeStream
+          - dynamodb:GetRecords
+          - dynamodb:GetShardIterator
+          - dynamodb:ListStreams
+          Resource: "*"              
+        - Effect: Allow
+          Action:                    
+            - sns:Publish
+          Resource: !Ref 'NotifySNSTopic'
+
+functions:
+  list-users:
+    handler: list-users.get
+    events:
+      - httpApi:
+          method: GET
+          path: /list-users
+          authorizer: serviceAuthorizer
+  signed-url:
+    handler: signed-url.get
+    events:
+      - httpApi:
+          method: GET
+          path: /signed-url
+          authorizer: serviceAuthorizer
+  add-user:
+    handler: add-user.add
+    events:
+      - httpApi:
+          method: POST
+          path: /add
+          authorizer: serviceAuthorizer
+  validate-user:
+    handler: validate-user.validate
+    events:
+      - httpApi:
+          method: POST
+          path: /validate
+          authorizer: serviceAuthorizer
+  list-validated-users:
+    handler: list-validated-users.get
+    events:
+      - httpApi:
+          method: GET
+          path: /validate/{faceid}
+          authorizer: serviceAuthorizer
+  notify-validations:
+    handler: notify-validations.notify
+    events:
+      - stream:
+          type: dynamodb
+          batchSize: 1
+          enabled: True          
+          arn: { "Fn::GetAtt": ["ValidationsDynamoDBTable", "StreamArn"] }
+
+resources:
+  Resources:
+    S3ImgBucket:
+      Type: "AWS::S3::Bucket"
+      DeletionPolicy: ${self:custom.deletion_policy}
+      Properties:
+        BucketName: ${self:custom.s3_img_bucket}
+        CorsConfiguration:
+            CorsRules:
+              - AllowedHeaders:
+                  - 'content-type'
+                AllowedMethods:
+                  - GET
+                  - PUT
+                AllowedOrigins:
+                  - 'http://facegnition.ddns.net'
+                  - 'http://localhost:4200' 
+                Id: myCORSRuleId1
+                MaxAge: 3600                  
+    S3WebBucket:
+      Type: "AWS::S3::Bucket"
+      Properties:
+        AccessControl: PublicRead
+        BucketName: ${self:custom.s3_web_bucket}
+        MetricsConfigurations:
+          - Id: EntireBucket
+        WebsiteConfiguration:
+          IndexDocument: index.html
+          ErrorDocument: index.html
+      DeletionPolicy: ${self:custom.deletion_policy}
+    S3WebBucketPolicy:
+      Type: "AWS::S3::BucketPolicy"
+      Properties:
+        Bucket: !Ref S3WebBucket
+        PolicyDocument:
+          Statement:
+            - Action:
+                - "s3:GetObject"
+              Effect: Allow
+              Resource: !Join
+                - ""
+                - - "arn:aws:s3:::"
+                  - !Ref S3WebBucket
+                  - /*
+              Principal: "*"
+    HttpApi:
+      Type: AWS::ApiGatewayV2::Api
+      Properties:
+        CorsConfiguration:           
+          AllowHeaders: 
+            - 'Authorization'
+            - 'Access-Control-Allow-Origin'
+            - 'Content-Type'
+          AllowCredentials: true              
+          AllowMethods: 
+            - 'GET'
+            - 'PUT'
+            - 'POST'
+            - 'OPTIONS'
+          AllowOrigins: 
+            - 'http://facegnition.ddns.net'
+            - 'http://localhost:4200' 
+      DependsOn: ServiceUserPool
+    ServiceUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: userpool-${self:custom.stack_name}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: True
+    ServiceUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: userpool-client-${self:custom.stack_name}
+        AllowedOAuthFlows:
+          - implicit
+        AllowedOAuthFlowsUserPoolClient: true
+        AllowedOAuthScopes:
+          - phone
+          - email
+          - openid
+          - profile
+          - aws.cognito.signin.user.admin
+        UserPoolId:
+          Ref: ServiceUserPool
+        CallbackURLs:
+          - ${self:custom.http_prot}${self:custom.app_domain}
+        LogoutURLs:
+          - ${self:custom.http_prot}${self:custom.app_domain}
+        ExplicitAuthFlows:
+          - ALLOW_USER_SRP_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        GenerateSecret: false
+        SupportedIdentityProviders:
+          - COGNITO
+    ServiceUserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        UserPoolId:
+          Ref: ServiceUserPool
+        Domain: userpool-${self:provider.environment.DOMAIN_SUFFIX}-${self:custom.stage}        
+    UsersDynamoDBTable: 
+      Type: AWS::DynamoDB::Table
+      Properties: 
+        AttributeDefinitions: 
+          - 
+            AttributeName: faceid
+            AttributeType: S
+          - 
+            AttributeName: name
+            AttributeType: S
+        KeySchema: 
+          - 
+            AttributeName: faceid
+            KeyType: HASH
+          - 
+            AttributeName: name
+            KeyType: RANGE
+        ProvisionedThroughput: 
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.dynamo_users_table}
+    ValidationsDynamoDBTable: 
+      Type: AWS::DynamoDB::Table
+      Properties: 
+        AttributeDefinitions: 
+          - 
+            AttributeName: faceid
+            AttributeType: S
+          - 
+            AttributeName: timest
+            AttributeType: S
+        KeySchema: 
+          - 
+            AttributeName: faceid
+            KeyType: HASH
+          - 
+            AttributeName: timest
+            KeyType: RANGE
+        ProvisionedThroughput: 
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.dynamo_validations_table}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    NotifySNSTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        Subscription:            
+          - Endpoint: ${env:NOTIFY_EMAIL}
+            Protocol: email            
+        TopicName: emailNotifyTopic-${self:custom.stack_name}
