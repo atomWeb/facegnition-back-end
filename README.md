@@ -8,7 +8,7 @@ Este proyecto fue desarrollado como TFM del máster [Ciencia de Datos e Ingenier
 
 Se emplea el servicio de análisis de imágenes Rekognition, que permite realizar comparación facial contra rostros previamente registrados en el sistema.  Esta solución se podría aplicar en diversos escenarios, tales como: Registro de usuarios de un hotel, registro a un evento tipo conferencia, control de acceso a áreas restringidas, detección de intrusos, control horario en una empresa, etc.
 
-Además, se ha utilizado el framework [serverless](https://serverless.com/) para definir y desplegar en la nube de AWS toda la infraestructura necesaria por el sistema. 
+Además, se ha utilizado [serverless](https://serverless.com/) framework para definir y desplegar en la nube de AWS toda la infraestructura necesaria por el sistema. 
 
 
 ## Front-end.
