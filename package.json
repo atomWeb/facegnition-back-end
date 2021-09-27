@@ -1,0 +1,23 @@
+{
+  "name": "facegnition-back-end",
+  "version": "1.0.0",
+  "description": "## **Sistema _Cloud_ de Identificación Automática de Personas Mediante Comparación Facial.**",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atomWeb/facegnition-back-end.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/atomWeb/facegnition-back-end/issues"
+  },
+  "homepage": "https://github.com/atomWeb/facegnition-back-end#readme",
+  "devDependencies": {
+    "serverless-dotenv-plugin": "^3.9.0"
+  }
+}

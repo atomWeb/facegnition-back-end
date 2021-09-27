@@ -1,5 +1,8 @@
 service: aws-facegnition-app
 useDotenv: true
+variablesResolutionMode: 20210326
+plugins:
+  - serverless-dotenv-plugin
 
 custom:
   app_acronym: facegnition
@@ -290,5 +293,5 @@ resources:
       Properties:
         Subscription:            
           - Endpoint: ${env:NOTIFY_EMAIL}
-            Protocol: email            
+            Protocol: Email            
         TopicName: emailNotifyTopic-${self:custom.stack_name}
