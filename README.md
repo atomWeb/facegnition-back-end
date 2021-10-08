@@ -10,6 +10,10 @@ Se emplea el servicio de análisis de imágenes Rekognition, que permite realiza
 
 Además, se ha utilizado [serverless](https://serverless.com/) framework para definir y desplegar en la nube de AWS toda la infraestructura necesaria por el sistema. 
 
+Debe generar un fichero `.env` con las siguientes variables: <br/>
+NOTIFY_EMAIL=email para notificación de validaciones. <br/>
+
+Release entregada a la Universidad: v1.01
 
 ## Front-end.
 
